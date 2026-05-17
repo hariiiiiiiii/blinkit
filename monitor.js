@@ -8,8 +8,8 @@ const TARGET_LATITUDE = parseFloat(process.env.TARGET_LATITUDE);
 const TARGET_LONGITUDE = parseFloat(process.env.TARGET_LONGITUDE);
 const EXPECTED_MERCHANT = parseInt(process.env.EXPECTED_MERCHANT, 10);
 
-const PRODUCT_URL = 'https://blinkit.com/prn/x/prid/128379';
-const PRODUCT_ID = '128379';
+const PRODUCT_URL = 'https://blinkit.com/prn/sprite-lime-flavored-soft-drink/prid/312';
+const PRODUCT_ID = '312';
 const TARGET = 'available';
 const INTERVAL = 30_000;
 
