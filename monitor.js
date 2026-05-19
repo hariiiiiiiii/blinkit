@@ -7,11 +7,11 @@ const CHAT_ID = process.env.CHAT_ID;
 const TARGET_LATITUDE = parseFloat(process.env.TARGET_LATITUDE);
 const TARGET_LONGITUDE = parseFloat(process.env.TARGET_LONGITUDE);
 const EXPECTED_MERCHANT = parseInt(process.env.EXPECTED_MERCHANT, 10);
-
 const PRODUCT_URL = 'https://blinkit.com/prn/sprite-lime-flavored-soft-drink/prid/312';
 const PRODUCT_ID = '312';
+const LAYOUT_ID = '312';
 const TARGET = 'available';
-const INTERVAL = 30_000;
+const INTERVAL = 2000; 
 
 if (!BOT_TOKEN || !CHAT_ID || !TARGET_LATITUDE) {
   console.error('[Error] Missing environment variables.');
@@ -36,85 +36,72 @@ let locationChecked = false;
 
   const page = await context.newPage();
 
-  try {
-    await page.goto('https://blinkit.com/');
+  // open product page once — keep it open forever
+  console.log('Loading product page...');
+  await page.goto(PRODUCT_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForTimeout(5000);
+  console.log('Page loaded. Starting polling...');
 
-    const detectBtn = page.getByText(/detect (my|current) location/i).first();
-
-    try {
-      await detectBtn.click({ timeout: 10000 });
-    } catch (e) {
-      const headerBtn = page.getByText(/delivery in|select location/i).first();
-      await headerBtn.click({ timeout: 5000 });
-
-      await page.waitForTimeout(1000);
-      await detectBtn.click({ timeout: 5000 });
-    }
-
-    await page.waitForTimeout(5000);
-  } catch (err) {
-    console.error('[Location Error]', err.message);
-  }
-
-  page.on('requestfinished', async request => {
-    if (request.url().includes('jumbo.blinkit.com') && request.method() === 'POST') {
-      try {
-        const postData = request.postData();
-        if (!postData) return;
-
-        const events = JSON.parse(postData)?.app_payload ?? [];
-
-        for (const e of events) {
-          const p = e?.payload?.value?.properties;
-          if (!p) continue;
-          if (p.product_id != PRODUCT_ID && p.page_id != PRODUCT_ID) continue;
-
-          if (!locationChecked) {
-            locationChecked = true;
-            console.log(`📍 merchant_id: ${p.merchant_id}`);
-            await bot.sendMessage(
-              CHAT_ID,
-              `📍 Merchant ID: ${p.merchant_id}\nExpected: ${EXPECTED_MERCHANT}\nMatch: ${p.merchant_id == EXPECTED_MERCHANT ? '✅' : '❌'}`
-            );
-          }
-
-          const state = p.state;
-
-          if (
-            state === undefined || 
-            state === null || 
-            String(state).trim().toLowerCase() === 'undefined' || 
-            String(state).trim() === ''
-          ) {
-            continue;
-          }
-
-          console.log(new Date().toISOString(), 'state:', state, 'inventory:', p.inventory);
-
-          if (state !== lastState) {
-            lastState = state;
-            await bot.sendMessage(CHAT_ID, `Update:\nState: ${state}\nInventory: ${p.inventory}\n${PRODUCT_URL}`);
-
-            if (state === TARGET) {
-              await bot.sendMessage(CHAT_ID, `🎯 Target state hit: ${TARGET}\n${PRODUCT_URL}`);
-            }
-          }
-        }
-      } catch (err) {}
-    }
-  });
-
-  console.log('Monitoring...');
-  await bot.sendMessage(CHAT_ID, '🟢 Monitor started');
+  await bot.sendMessage(CHAT_ID, 'Monitor started');
 
   while (true) {
     try {
-      await page.goto(PRODUCT_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(5000);
+      const result = await page.evaluate(async (layoutId) => {
+        try {
+          const r = await fetch(`/v1/layout/product/${layoutId}`, {
+            headers: {
+              'accept': 'application/json',
+              'app-client': 'consumer-website',
+              'app-version': '3.0'
+            }
+          });
+          const data = await r.json();
+          return { ok: true, data };
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+      }, LAYOUT_ID);
+
+      if (!result.ok) {
+        console.error('[Fetch Error]', result.error);
+      } else {
+        // dig state out — log raw once to find shape
+        if (!locationChecked) {
+          locationChecked = true;
+          console.log('[Debug] raw response:', JSON.stringify(result.data).slice(0, 500));
+          await bot.sendMessage(CHAT_ID, `[Debug] ${JSON.stringify(result.data).slice(0, 300)}`);
+        }
+
+        // try known shapes
+        const state =
+          result.data?.state ??
+          result.data?.product?.state ??
+          result.data?.data?.state ??
+          result.data?.objects?.[0]?.state ??
+          null;
+
+        const inventory =
+          result.data?.inventory ??
+          result.data?.product?.inventory ??
+          result.data?.data?.inventory ??
+          null;
+
+        if (state) {
+          console.log(new Date().toISOString(), 'state:', state, 'inventory:', inventory);
+
+          if (state !== lastState) {
+            lastState = state;
+            await bot.sendMessage(CHAT_ID, `Update:\nState: ${state}\nInventory: ${inventory}\n${PRODUCT_URL}`);
+            if (state === TARGET) {
+              await bot.sendMessage(CHAT_ID, `Target state hit: ${TARGET}\n${PRODUCT_URL}`);
+            }
+          }
+        }
+      }
     } catch (err) {
-      console.error('[Network] Page reload failed:', err.message);
+      console.error('[Poll Error]', err.message);
     }
 
-    await page.waitForTimeout(INTERVAL - 5000);
+    await page.waitForTimeout(INTERVAL);
   }
 })();
