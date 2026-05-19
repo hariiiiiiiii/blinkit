@@ -33,43 +33,48 @@ let lastState = null;
   await page.goto(PRODUCT_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(3000);
 
-  await bot.sendMessage(CHAT_ID, 'Monitor started (fast fetch mode)');
+  await bot.sendMessage(CHAT_ID, '🟢 Monitor started (fast fetch mode)');
   console.log('Monitoring...');
 
   while (true) {
     try {
-      const result = await page.evaluate(async (layoutId, productId) => {
-        const r = await fetch(`/v1/layout/product/${layoutId}`, {
-          headers: {
-            'accept': 'application/json',
-            'app-client': 'consumer-website',
-            'app-version': '3.0'
+      const result = await page.evaluate(async ({ layoutId, productId }) => {
+        try {
+          const r = await fetch(`/v1/layout/product/${layoutId}`, {
+            headers: {
+              'accept': 'application/json',
+              'app-client': 'consumer-website',
+              'app-version': '3.0'
+            }
+          });
+          if (!r.ok) return { error: `HTTP ${r.status}` };
+          const data = await r.json();
+          for (const snippet of data?.response?.snippets ?? []) {
+            const ca = snippet?.tracking?.common_attributes;
+            if (ca?.product_id == productId) {
+              return { state: ca.state, inventory: ca.inventory, merchant_id: ca.merchant_id };
+            }
           }
-        });
-        const data = await r.json();
-        for (const snippet of data?.response?.snippets ?? []) {
-          const ca = snippet?.tracking?.common_attributes;
-          if (ca?.product_id == productId) {
-            return { state: ca.state, inventory: ca.inventory, merchant_id: ca.merchant_id };
-          }
+          return { error: 'product not found in snippets' };
+        } catch (e) {
+          return { error: e.message };
         }
-        return null;
-      }, LAYOUT_ID, PRODUCT_ID);
+      }, { layoutId: LAYOUT_ID, productId: PRODUCT_ID });
 
-      if (!result) {
-        console.log(new Date().toISOString(), 'no matching product in response');
+      if (result.error) {
+        console.error(new Date().toISOString(), '[Fetch Error]', result.error);
       } else {
         console.log(new Date().toISOString(), 'state:', result.state, '| inventory:', result.inventory, '| merchant:', result.merchant_id);
         if (result.state !== lastState) {
           lastState = result.state;
           await bot.sendMessage(CHAT_ID, `Update:\nState: ${result.state}\nInventory: ${result.inventory}\nMerchant: ${result.merchant_id}\n${PRODUCT_URL}`);
           if (result.state === TARGET) {
-            await bot.sendMessage(CHAT_ID, `IN STOCK!\n${PRODUCT_URL}`);
+            await bot.sendMessage(CHAT_ID, `🎯 IN STOCK!\n${PRODUCT_URL}`);
           }
         }
       }
     } catch (err) {
-      console.error('[Poll Error]', err.message);
+      console.error(new Date().toISOString(), '[Poll Error]', err.message);
     }
 
     await page.waitForTimeout(INTERVAL);
