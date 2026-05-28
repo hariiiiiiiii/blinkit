@@ -62,7 +62,7 @@ async function aggressiveUiCart(productUrl) {
 
     // 5. Click the E29/DRDO address card (entire row, not just label)
     const addressCard = page.locator('[class*="AddressList__Address"]')
-      .filter({ hasText: /E29|DRDO TOWNSHIP/i }).first();
+      .filter({ hasText: /E29\/6/i }).first();
     await addressCard.waitFor({ state: 'visible', timeout: 8000 });
     await addressCard.scrollIntoViewIfNeeded();
     await page.waitForTimeout(500);
@@ -106,6 +106,13 @@ async function aggressiveUiCart(productUrl) {
   const page = await context.newPage();
   await page.goto(PRODUCT_URL, { waitUntil: 'domcontentloaded' });
   console.log('👀 Monitoring...');
+  await bot.sendMessage(CHAT_ID, "👀 Bot started — monitoring for stock...");
+
+  setInterval(async () => {
+    if (!isCheckingOut) {
+      await bot.sendMessage(CHAT_ID, `⏱ Still watching... ${new Date().toLocaleTimeString()}`);
+    }
+  }, 5 * 60 * 1000);
 
   while (true) {
     if (isCheckingOut) {
