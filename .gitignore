@@ -1,4 +1,4 @@
 .env
 blinkit-session/
-auth.js
+auth.json
 debug.js
