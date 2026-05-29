@@ -108,9 +108,10 @@ async function aggressiveUiCart(productUrl) {
   console.log('👀 Monitoring...');
   await bot.sendMessage(CHAT_ID, "👀 Bot started — monitoring for stock...");
 
-  setInterval(async () => {
+  setInterval(() => {
     if (!isCheckingOut) {
-      await bot.sendMessage(CHAT_ID, `⏱ Still watching... ${new Date().toLocaleTimeString()}`);
+      bot.sendMessage(CHAT_ID, `⏱ Still watching... ${new Date().toLocaleTimeString()}`)
+        .catch(e => console.log("Telegram heartbeat failed, ignoring..."));
     }
   }, 5 * 60 * 1000);
 
